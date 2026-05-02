@@ -3,14 +3,14 @@
 # Description:   A kid-friendly Streamlit application that turns uploaded
 #                images into fun audio stories for children aged 3-10.
 # Pipeline:
-#   1. Image Captioning — Salesforce/blip-image-captioning-large
+#   1. Image Captioning — Salesforce/blip-image-captioning-base
 #   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
 #   3. Text-to-Speech   — gTTS (Google Text-to-Speech)
 # ============================================================================
 
 # ── Import Part ─────────────────────────────────────────────────────────────
 import streamlit as st
-from transformers import pipeline
+from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 from gtts import gTTS
 from PIL import Image
 import tempfile
@@ -20,19 +20,26 @@ import tempfile
 def generate_caption(image_path):
     """
     Generate a text caption from an uploaded image.
-    Uses the BLIP large image captioning model from Hugging Face.
+    Uses the BLIP image captioning model from Hugging Face.
+    Loads the model directly via BlipProcessor and BlipForConditionalGeneration
+    for maximum compatibility.
     
     Parameters:
         image_path (str): File path of the uploaded image.
     Returns:
         str: A short caption describing the image content.
     """
-    captioner = pipeline(
-        "image-text-to-text",
-        model="Salesforce/blip-image-captioning-large"
-    )
-    result = captioner(image_path)
-    caption = result[0]["generated_text"]
+    # Load the processor and model directly
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+
+    # Open and process the image
+    image = Image.open(image_path).convert("RGB")
+    inputs = processor(image, return_tensors="pt")
+
+    # Generate the caption
+    output = model.generate(**inputs, max_new_tokens=50)
+    caption = processor.decode(output[0], skip_special_tokens=True)
     return caption
 
 
