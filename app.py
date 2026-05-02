@@ -3,7 +3,7 @@
 # Description:   A kid-friendly Streamlit application that turns uploaded
 #                images into fun audio stories for children aged 3-10.
 # Pipeline:
-#   1. Image Captioning — nlpconnect/vit-gpt2-image-captioning
+#   1. Image Captioning — Salesforce/blip-image-captioning-large
 #   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
 #   3. Text-to-Speech   — gTTS (Google Text-to-Speech)
 # ============================================================================
@@ -20,7 +20,7 @@ import tempfile
 def generate_caption(image_path):
     """
     Generate a text caption from an uploaded image.
-    Uses the vit-gpt2 image captioning model from Hugging Face.
+    Uses the BLIP large image captioning model from Hugging Face.
     
     Parameters:
         image_path (str): File path of the uploaded image.
@@ -29,7 +29,7 @@ def generate_caption(image_path):
     """
     captioner = pipeline(
         "image-text-to-text",
-        model="nlpconnect/vit-gpt2-image-captioning"
+        model="Salesforce/blip-image-captioning-large"
     )
     result = captioner(image_path)
     caption = result[0]["generated_text"]
