@@ -1,5 +1,5 @@
 streamlit
-transformers==4.44.2
+transformers
 torch
 Pillow
 gTTS
