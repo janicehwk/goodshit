@@ -181,7 +181,7 @@ st.markdown("""
 # ── Main Part ───────────────────────────────────────────────────────────────
 
 # App header with playful styling
-st.title('<p class="kid-title">🪄 Magic Story Machine 🪄</p>', unsafe_allow_html=True)
+st.markdown('<p class="kid-title">🪄 Magic Story Machine 🪄</p>', unsafe_allow_html=True)
 st.markdown(
     '<p class="kid-subtitle">Upload a picture and watch it turn into a story! 📖✨</p>',
     unsafe_allow_html=True,
