@@ -28,7 +28,7 @@ def generate_caption(image_path):
         str: A short caption describing the image content.
     """
     captioner = pipeline(
-        "image-to-text",
+        "image-text-to-text",
         model="nlpconnect/vit-gpt2-image-captioning"
     )
     result = captioner(image_path)
