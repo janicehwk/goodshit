@@ -1,40 +1,66 @@
 import streamlit as st
 from transformers import pipeline
-from gtts import gTTS
-import os
 
-# --- 1. SETUP MODELS ---
-# We use the pipeline API for simplicity and readability
+# Setting up the page config
+st.set_page_config(page_title="Image Story Teller", page_icon="📖")
+
 @st.cache_resource
 def load_models():
-    captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
-    # GPT-2 needs a bit of help to stay "on track" for kids
-    story_gen = pipeline("text-generation", model="gpt2") 
+    """
+    Loads the ML models once and caches them to memory.
+    """
+    # FIX: Changed "image-to-text" to "image-captioning"
+    captioner = pipeline(
+        "image-captioning", 
+        model="Salesforce/blip-image-captioning-base"
+    )
+    
+    # Standard text generation pipeline for the story
+    story_gen = pipeline(
+        "text-generation", 
+        model="gpt2"
+    )
+    
     return captioner, story_gen
 
+# Initialize models
 caption_model, story_model = load_models()
 
-# --- 2. THE APP INTERFACE ---
-st.title("🪄 Magic Story Machine")
-st.write("Upload a photo to turn it into a magical adventure!")
+def main():
+    st.title("Image to Story Generator")
+    st.write("Upload an image and let AI spin a tale!")
 
-uploaded_file = st.file_uploader("Choose a picture", type=["jpg", "png", "jpeg"])
+    uploaded_file = st.file_冷静_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-if uploaded_file:
-    # Save and Display Image
-    with open("temp_img.jpg", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    st.image(uploaded_file, caption="Your Picture", use_container_width=True)
+    if uploaded_file is not None:
+        # Display the uploaded image
+        st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
+        
+        if st.button("Generate Story"):
+            with st.spinner("Analyzing image and writing story..."):
+                # 1. Generate Caption
+                # We pass the file directly to the pipeline
+                caption_results = caption_model(uploaded_file)
+                caption_text = caption_results[0]['generated_text']
+                
+                st.subheader("Image Description:")
+                st.info(caption_text)
+                
+                # 2. Generate Story based on caption
+                prompt = f"Once upon a time, {caption_text}. "
+                story_results = story_model(
+                    prompt, 
+                    max_length=150, 
+                    num_return_sequences=1,
+                    truncation=True
+                )
+                story_text = story_results[0]['generated_text']
+                
+                st.subheader("The Story:")
+                st.write(story_text)
 
-    # STAGE 1: Image to Text
-    with st.spinner("Looking at your picture..."):
-        caption_result = caption_model("temp_img.jpg")
-        caption = caption_result[0]['generated_text']
-        st.info(f"**I see:** {caption}")
-
-    # STAGE 2: Text to Story (Revised for Length)
-    with st.spinner("Writing a long magical story..."):
-        # We give GPT-2 a very specific starting point to encourage length
+if __name__ == "__main__":
+    main()        # We give GPT-2 a very specific starting point to encourage length
         prompt = (
             f"Once upon a time, there was {caption}. "
             "It was a magical day and something amazing happened. "
