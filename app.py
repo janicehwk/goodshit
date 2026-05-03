@@ -1,142 +1,51 @@
-import streamlit as st
-from transformers import pipeline
-from PIL import Image
-
-# 1. Model Loading (Cached so it only runs once)
-@st.cache_resource
-def load_models():
-    captioner = pipeline(
-        "image-captioning", 
-        model="Salesforce/blip-image-captioning-base"
+def generate_story(caption):
+    """
+    優化版：生成約 50-100 字的兒童故事。
+    """
+    # 建立一個更有引導性的 Prompt，告訴模型這是一個給孩子的故事
+    prompt = (
+        f"Once upon a time, {caption}. "
+        "It was a sunny day and something magical was about to happen. "
+        "Then, "
     )
-    story_gen = pipeline(
-        "text-generation", 
-        model="gpt2"
+
+    # 這裡建議加上 @st.cache_resource 放在全域，但為了符合你原代碼結構，維持在函式內
+    story_generator = pipeline(
+        "text-generation",
+        model="Prashant-karwasra/GPT2_text_generation_model"
     )
-    return captioner, story_gen
 
-caption_model, story_model = load_models()
+    # 參數說明：
+    # max_length: Token 數，120 太短，100個單字大約需要 150-200 token
+    # min_length: 強制模型不要太早結束
+    # repetition_penalty: 設為 1.2 防止 GPT-2 反覆說同樣的話
+    result = story_generator(
+        prompt,
+        max_length=200, 
+        min_length=80,
+        num_return_sequences=1,
+        do_sample=True,
+        temperature=0.8,
+        top_k=50,
+        top_p=0.95,
+        repetition_penalty=1.2
+    )
+    
+    story = result[0]["generated_text"]
 
-def main():
-    st.set_page_config(page_title="Image Story Generator", page_icon="🖼️")
-    st.title("🖼️ Image to Story Generator")
+    # 移除 Prompt 部分，只留下生成的故事內容（可選）
+    # story = story.replace(prompt, "")
 
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+    # 修剪邏輯：確保故事在 50-120 字之間，並在完整句子結束
+    words = story.split()
+    if len(words) > 120:
+        trimmed = " ".join(words[:120])
+        # 尋找最後一個句號，讓結尾自然
+        for punctuation in [".", "!", "?"]:
+            last_pos = trimmed.rfind(punctuation)
+            if last_pos != -1:
+                trimmed = trimmed[: last_pos + 1]
+                break
+        story = trimmed
 
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Your Uploaded Image", use_container_width=True)
-
-        if st.button("Generate Story"):
-            with st.spinner("Generating magic..."):
-                try:
-                    # Step 1: Captioning
-                    captions = caption_model(image)
-                    base_caption = captions[0]['generated_text']
-                    
-                    st.subheader("📝 Description")
-                    st.info(base_caption)
-
-                    # Step 2: Story Generation
-                    prompt = f"Once upon a time, there was {base_caption}. "
-                    
-                    stories = story_model(
-                        prompt, 
-                        max_length=150, 
-                        do_sample=True, 
-                        temperature=0.8, 
-                        truncation=True
-                    )
-                    
-                    full_story = stories[0]['generated_text']
-
-                    st.subheader("📖 The Story")
-                    st.write(full_story)
-                
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-
-if __name__ == "__main__":
-    main()
-                    # Step 1: Captioning
-                    # BLIP expects a PIL Image or path
-                    captions = caption_model(image)
-                    base_caption = captions[0]['generated_text']
-                    
-                    st.subheader("Description")
-                    st.write(base_caption)
-
-                    # Step 2: Story Generation
-                    # Constructing a clean prompt
-                    prompt = f"Once upon a time, there was {base_caption}. "
-                    
-                    stories = story_model(
-                        prompt, 
-                        max_length=150, 
-                        do_sample=True, 
-                        temperature=0.7,
-                        truncation=True
-                    )
-                    
-                    full_story = stories[0]['generated_text']
-
-                    st.subheader("The Story")
-                    st.write(full_story)
-                
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
-
-if __name__ == "__main__":
-    main()        st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
-        
-        if st.button("Generate Story"):
-            with st.spinner("Analyzing image and writing story..."):
-                # 1. Generate Caption
-                # We pass the file directly to the pipeline
-                caption_results = caption_model(uploaded_file)
-                caption_text = caption_results[0]['generated_text']
-                
-                st.subheader("Image Description:")
-                st.info(caption_text)
-                
-                # 2. Generate Story based on caption
-                prompt = f"Once upon a time, {caption_text}. "
-                story_results = story_model(
-                    prompt, 
-                    max_length=150, 
-                    num_return_sequences=1,
-                    truncation=True
-                )
-                story_text = story_results[0]['generated_text']
-                
-                st.subheader("The Story:")
-                st.write(story_text)
-
-if __name__ == "__main__":
-    main()        # We give GPT-2 a very specific starting point to encourage length
-        prompt = (
-            f"Once upon a time, there was {caption}. "
-            "It was a magical day and something amazing happened. "
-            "First,"
-        )
-        
-        # Setting min_new_tokens ensures the story isn't too short
-        story_output = story_model(
-            prompt, 
-            max_new_tokens=150,  # Allows for ~100-150 words
-            min_new_tokens=80,   # Forces it to be at least ~60-80 words
-            do_sample=True, 
-            temperature=0.7,
-            truncation=True
-        )
-        story_text = story_output[0]['generated_text']
-        
-        st.subheader("📖 Your Story")
-        st.write(story_text)
-
-    # STAGE 3: Story to Audio
-    with st.spinner("Preparing the audio..."):
-        tts = gTTS(text=story_text, lang='en')
-        tts.save("story.mp3")
-        st.audio("story.mp3")
-        st.balloons()
+    return story
