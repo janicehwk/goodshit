@@ -1,40 +1,69 @@
 import streamlit as st
 from transformers import pipeline
+from PIL import Image
 
-# Setting up the page config
-st.set_page_config(page_title="Image Story Teller", page_icon="📖")
-
+# 1. Model Loading (Cached so it only runs once)
 @st.cache_resource
 def load_models():
-    """
-    Loads the ML models once and caches them to memory.
-    """
-    # FIX: Changed "image-to-text" to "image-captioning"
+    # Fix: "image-captioning" is the correct task for BLIP
     captioner = pipeline(
         "image-captioning", 
         model="Salesforce/blip-image-captioning-base"
     )
-    
-    # Standard text generation pipeline for the story
+    # Text generator for the story
     story_gen = pipeline(
         "text-generation", 
         model="gpt2"
     )
-    
     return captioner, story_gen
 
-# Initialize models
+# Initialize the models
 caption_model, story_model = load_models()
 
 def main():
+    st.set_page_config(page_title="GoodShit Image Story", page_icon="🖼️")
     st.title("Image to Story Generator")
-    st.write("Upload an image and let AI spin a tale!")
 
-    uploaded_file = st.file_冷静_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
     if uploaded_file is not None:
-        # Display the uploaded image
-        st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
+        # Open image for display and processing
+        image = Image.open(uploaded_file)
+        st.image(image, caption="Your Uploaded Image", use_container_width=True)
+
+        if st.button("Generate Story"):
+            with st.spinner("Processing..."):
+                try:
+                    # Step 1: Captioning
+                    # BLIP expects a PIL Image or path
+                    captions = caption_model(image)
+                    base_caption = captions[0]['generated_text']
+                    
+                    st.subheader("Description")
+                    st.write(base_caption)
+
+                    # Step 2: Story Generation
+                    # Constructing a clean prompt
+                    prompt = f"Once upon a time, there was {base_caption}. "
+                    
+                    stories = story_model(
+                        prompt, 
+                        max_length=150, 
+                        do_sample=True, 
+                        temperature=0.7,
+                        truncation=True
+                    )
+                    
+                    full_story = stories[0]['generated_text']
+
+                    st.subheader("The Story")
+                    st.write(full_story)
+                
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()        st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
         
         if st.button("Generate Story"):
             with st.spinner("Analyzing image and writing story..."):
