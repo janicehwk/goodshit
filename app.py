@@ -5,35 +5,59 @@ from PIL import Image
 # 1. Model Loading (Cached so it only runs once)
 @st.cache_resource
 def load_models():
-    # Fix: "image-captioning" is the correct task for BLIP
     captioner = pipeline(
         "image-captioning", 
         model="Salesforce/blip-image-captioning-base"
     )
-    # Text generator for the story
     story_gen = pipeline(
         "text-generation", 
         model="gpt2"
     )
     return captioner, story_gen
 
-# Initialize the models
 caption_model, story_model = load_models()
 
 def main():
-    st.set_page_config(page_title="GoodShit Image Story", page_icon="🖼️")
-    st.title("Image to Story Generator")
+    st.set_page_config(page_title="Image Story Generator", page_icon="🖼️")
+    st.title("🖼️ Image to Story Generator")
 
     uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
     if uploaded_file is not None:
-        # Open image for display and processing
-        image = Image.open(uploaded_file)
+        image = Image.open(uploaded_file).convert("RGB")
         st.image(image, caption="Your Uploaded Image", use_container_width=True)
 
         if st.button("Generate Story"):
-            with st.spinner("Processing..."):
+            with st.spinner("Generating magic..."):
                 try:
+                    # Step 1: Captioning
+                    captions = caption_model(image)
+                    base_caption = captions[0]['generated_text']
+                    
+                    st.subheader("📝 Description")
+                    st.info(base_caption)
+
+                    # Step 2: Story Generation
+                    prompt = f"Once upon a time, there was {base_caption}. "
+                    
+                    stories = story_model(
+                        prompt, 
+                        max_length=150, 
+                        do_sample=True, 
+                        temperature=0.8, 
+                        truncation=True
+                    )
+                    
+                    full_story = stories[0]['generated_text']
+
+                    st.subheader("📖 The Story")
+                    st.write(full_story)
+                
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
                     # Step 1: Captioning
                     # BLIP expects a PIL Image or path
                     captions = caption_model(image)
