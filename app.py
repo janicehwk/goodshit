@@ -35,7 +35,7 @@ def generate_story(scenario):
     story_pipe = pipeline("text-generation", model="pranavpsv/genre-story-generator-v2")
     
     # We feed the scenario to the model so you pass your assignment requirement,
-    # but we format it so it can be easily removed later.
+    # but format it so it can be cleanly removed from the final UI text.
     hidden_context = f"Topic: {scenario}. "
     prompt = f"{hidden_context}Once upon a time,"
 
@@ -51,7 +51,7 @@ def generate_story(scenario):
     
     story = story_results[0]['generated_text']
     
-    # Clean up: Remove the hidden context so the user ONLY sees "Once upon a time,"
+    # Clean up: Remove the hidden context so the user ONLY sees the story
     story = story.replace(hidden_context, "").strip()
 
     # Final word count enforcement: 50-100 words[cite: 1]
@@ -71,15 +71,13 @@ def generate_story(scenario):
 def text2audio(story_text):
     """
     Function 3: Text-to-Speech Conversion.
-    Utilizes a Hugging Face VITS model for a more natural, audiobook-style 
-    voice suitable for kids, replacing the emotionless gTTS.[cite: 1]
+    Utilizes the Hugging Face Bark model for highly expressive, kid-friendly storytelling.[cite: 1]
     """
-    # Using VITS (Variational Inference with adversarial learning for end-to-end Text-to-Speech)
-    # It is highly expressive and designed for reading long-form text naturally.
-    tts_pipe = pipeline("text-to-speech", model="kakao-enterprise/vits-ljs")
+    # Bark is highly expressive and does NOT require phonemizer/espeak
+    tts_pipe = pipeline("text-to-speech", model="suno/bark-small")
     
-    # The pipeline returns a dictionary containing the audio array and sampling rate
-    audio_data = tts_pipe(story_text)
+    # 'v2/en_speaker_9' is a warm, expressive female voice preset perfect for bedtime stories
+    audio_data = tts_pipe(story_text, forward_params={"voice_preset": "v2/en_speaker_9"})
     
     return audio_data
 
@@ -139,7 +137,7 @@ def main():
 
         # Stage 3: Story to Audio
         st.markdown('<p class="step-label">🔊 Step 4: Listen to your story!</p>', unsafe_allow_html=True)
-        with st.spinner("🎵 Getting the story ready to read aloud..."):
+        with st.spinner("🎵 Getting the story ready to read aloud... (Bark is a powerful model, this may take a moment!)"):
             audio_data = text2audio(story)
 
         # Streamlit can play the audio array directly from the Hugging Face pipeline output
