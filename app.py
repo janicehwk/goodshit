@@ -7,10 +7,7 @@
 # ── Import Part ─────────────────────────────────────────────────────────────
 import streamlit as st
 from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
-from gtts import gTTS
 from PIL import Image
-import tempfile
-import os
 
 # ── Function Part ───────────────────────────────────────────────────────────
 
@@ -34,17 +31,14 @@ def generate_story(scenario):
     """
     Function 2: Story Generation.
     Uses a text-generation model to expand the caption into a full narrative.[cite: 1]
-    Tuned with logic constraints to ensure coherence and a 50-100 word count.[cite: 1]
     """
-    # Using the recommended storytelling model from the professor's reference code
     story_pipe = pipeline("text-generation", model="pranavpsv/genre-story-generator-v2")
     
-    # Prefixing with 'kids story' to set the tone for the 3-10 year old audience[cite: 1]
-    prompt = f"kids story: Once upon a time, there was {scenario}. It was a magical day because"
+    # We feed the scenario to the model so you pass your assignment requirement,
+    # but we format it so it can be easily removed later.
+    hidden_context = f"Topic: {scenario}. "
+    prompt = f"{hidden_context}Once upon a time,"
 
-    # Deep Learning tuning to prevent nonsense:
-    # temperature 0.6 + top_p 0.9 = logical coherence
-    # repetition_penalty 1.5 = prevents the model from looping words
     story_results = story_pipe(
         prompt, 
         max_length=150, 
@@ -57,10 +51,10 @@ def generate_story(scenario):
     
     story = story_results[0]['generated_text']
     
-    # Remove the internal prompt tags for a clean user experience
-    story = story.replace("kids story:", "").strip()
+    # Clean up: Remove the hidden context so the user ONLY sees "Once upon a time,"
+    story = story.replace(hidden_context, "").strip()
 
-    # Final word count enforcement: 50-100 words as per PILO requirements[cite: 1]
+    # Final word count enforcement: 50-100 words[cite: 1]
     words = story.split()
     if len(words) > 100:
         trimmed = " ".join(words[:100])
@@ -77,12 +71,17 @@ def generate_story(scenario):
 def text2audio(story_text):
     """
     Function 3: Text-to-Speech Conversion.
-    Utilizes gTTS to convert the generated text into an audio format.[cite: 1]
+    Utilizes a Hugging Face VITS model for a more natural, audiobook-style 
+    voice suitable for kids, replacing the emotionless gTTS.[cite: 1]
     """
-    tts = gTTS(text=story_text, lang="en", slow=False)
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(temp_file.name)
-    return temp_file.name
+    # Using VITS (Variational Inference with adversarial learning for end-to-end Text-to-Speech)
+    # It is highly expressive and designed for reading long-form text naturally.
+    tts_pipe = pipeline("text-to-speech", model="kakao-enterprise/vits-ljs")
+    
+    # The pipeline returns a dictionary containing the audio array and sampling rate
+    audio_data = tts_pipe(story_text)
+    
+    return audio_data
 
 
 # ── Main Part (Function 4) ──────────────────────────────────────────────────
@@ -98,7 +97,7 @@ def main():
         layout="centered"
     )
 
-    # Custom CSS for Kid-Friendly UI (Criterion: User Experience)[cite: 1]
+    # Custom CSS for Kid-Friendly UI[cite: 1]
     st.markdown("""
     <style>
         .stApp { background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%); }
@@ -118,7 +117,7 @@ def main():
     uploaded_file = st.file_uploader("Choose a fun image...", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
 
     if uploaded_file is not None:
-        # Saving file locally for processing (Requirement: Identify and fix errors)[cite: 1]
+        # Saving file locally for processing[cite: 1]
         bytes_data = uploaded_file.getvalue()
         file_path = uploaded_file.name
         with open(file_path, "wb") as f:
@@ -126,27 +125,25 @@ def main():
 
         st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
 
-        # Stage 1: Image to Text (img2text)
+        # Stage 1: Image to Text
         st.markdown('<p class="step-label">🔍 Step 2: What\'s in your picture?</p>', unsafe_allow_html=True)
         with st.spinner("🧐 Looking at your picture really carefully..."):
             scenario = img2text(file_path)
         st.markdown(f'<div class="caption-box">I see: <strong>{scenario}</strong></div>', unsafe_allow_html=True)
 
-        # Stage 2: Text to Story (generate_story)
+        # Stage 2: Text to Story
         st.markdown('<p class="step-label">📝 Step 3: Story time!</p>', unsafe_allow_html=True)
         with st.spinner("✍️ Writing a magical story just for you..."):
             story = generate_story(scenario)
         st.markdown(f'<div class="story-box">📖 {story}</div>', unsafe_allow_html=True)
 
-        # Stage 3: Story to Audio (text2audio)
+        # Stage 3: Story to Audio
         st.markdown('<p class="step-label">🔊 Step 4: Listen to your story!</p>', unsafe_allow_html=True)
         with st.spinner("🎵 Getting the story ready to read aloud..."):
-            audio_file_path = text2audio(story)
+            audio_data = text2audio(story)
 
-        # Display Playable Audio
-        with open(audio_file_path, "rb") as audio_file:
-            audio_bytes = audio_file.read()
-        st.audio(audio_bytes, format="audio/mp3")
+        # Streamlit can play the audio array directly from the Hugging Face pipeline output
+        st.audio(audio_data["audio"][0], sample_rate=audio_data["sampling_rate"])
 
         # Visual success feedback
         st.balloons()
