@@ -2,6 +2,10 @@
 # Program Title: Magic Story Machine - A Storytelling App for Kids
 # Description:   A kid-friendly Streamlit application that turns uploaded
 #                images into fun audio stories for children aged 3-10.
+# Pipeline:
+#   1. Image Captioning — Salesforce/blip-image-captioning-base
+#   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
+#   3. Text-to-Speech   — gTTS (Google Text-to-Speech)
 # ============================================================================
 
 # ── Import Part ─────────────────────────────────────────────────────────────
@@ -14,9 +18,11 @@ import os
 
 # ── Function Part ───────────────────────────────────────────────────────────
 
-# Function 1: Aligned to Prof name 'img2text'
 def img2text(image_path):
-    """Generate a text caption from an uploaded image."""
+    """
+    Function 1: Generate a text caption from an uploaded image.
+    Aligned with professor naming convention.[cite: 1]
+    """
     processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
     model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
@@ -27,12 +33,16 @@ def img2text(image_path):
     caption = processor.decode(output[0], skip_special_tokens=True)
     return caption
 
-# Function 2: Aligned to Prof name 'generate_story'
+
 def generate_story(caption):
-    """Generate a kid-friendly story (50-100 words) from an image caption."""
+    """
+    Function 2: Generate a kid-friendly story (50-100 words) from a caption.
+    Uses min_new_tokens to force the model to meet assignment length requirements.[cite: 1]
+    """
+    # Enhanced prompt to encourage descriptive storytelling for children[cite: 1]
     prompt = (
-        f"Once upon a time, {caption}. "
-        "This is a fun and magical story for little kids: "
+        f"Instruction: Write a magical, long adventure story for a child about {caption}. "
+        f"The story should be wonderous and fun. Once upon a time, "
     )
 
     story_generator = pipeline(
@@ -40,16 +50,23 @@ def generate_story(caption):
         model="Prashant-karwasra/GPT2_text_generation_model"
     )
 
+    # Parameters set to ensure word count stays between 50-100 words[cite: 1]
     result = story_generator(
         prompt,
-        max_length=120,
+        max_new_tokens=150,
+        min_new_tokens=85,       # Forces the model to generate a longer narrative
         num_return_sequences=1,
         do_sample=True,
-        temperature=0.8
+        temperature=0.85,
+        repetition_penalty=1.2   # Prevents loops during longer generation
     )
-    story = result[0]["generated_text"]
+    
+    raw_story = result[0]["generated_text"]
+    
+    # Clean the story by removing the instruction prefix
+    story = raw_story.replace(prompt, "Once upon a time, ")
 
-    # Your custom trimming logic to meet the 50-100 word requirement
+    # Trim to exactly 100 words and end at a clean sentence[cite: 1]
     words = story.split()
     if len(words) > 100:
         trimmed = " ".join(words[:100])
@@ -59,27 +76,34 @@ def generate_story(caption):
                 trimmed = trimmed[: last_pos + 1]
                 break
         story = trimmed
+
     return story
 
-# Function 3: Aligned to Prof name 'text2audio'
+
 def text2audio(story_text):
-    """Convert a story string into an audio file using Google Text-to-Speech."""
+    """
+    Function 3: Convert a story string into an audio file using gTTS.
+    Aligned with professor naming convention.[cite: 1]
+    """
     tts = gTTS(text=story_text, lang="en", slow=False)
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(temp_file.name)
     return temp_file.name
 
+
 # ── Main Part ───────────────────────────────────────────────────────────────
 
 def main():
-    # Page Configuration (Your original icons/layout)
+    """
+    Function 4: The Main Application logic and Streamlit UI.[cite: 1]
+    """
     st.set_page_config(
         page_title="Magic Story Machine",
         page_icon="🪄",
         layout="centered"
     )
 
-    # Your Custom CSS for Kid-Friendly UI
+    # Custom CSS for Kid-Friendly UI
     st.markdown("""
     <style>
         .stApp { background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%); }
@@ -92,51 +116,47 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # App header with your original playful styling
     st.markdown('<p class="kid-title">🪄 Magic Story Machine 🪄</p>', unsafe_allow_html=True)
     st.markdown('<p class="kid-subtitle">Upload a picture and watch it turn into a story! 📖✨</p>', unsafe_allow_html=True)
 
-    # Image upload section
     st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
     uploaded_file = st.file_uploader("Choose a fun image...", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
 
     if uploaded_file is not None:
-        # Save file locally as per standard practice
+        # Save file locally as per professor's reference pattern[cite: 1]
         bytes_data = uploaded_file.getvalue()
         file_path = uploaded_file.name
         with open(file_path, "wb") as f:
             f.write(bytes_data)
 
-        # Display image
         st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
 
         # Stage 1: Image → Caption
         st.markdown('<p class="step-label">🔍 Step 2: What\'s in your picture?</p>', unsafe_allow_html=True)
         with st.spinner("🧐 Looking at your picture really carefully..."):
-            caption = img2text(file_path) # Function name updated
+            caption = img2text(file_path)
         st.markdown(f'<div class="caption-box">I see: <strong>{caption}</strong></div>', unsafe_allow_html=True)
 
         # Stage 2: Caption → Story
         st.markdown('<p class="step-label">📝 Step 3: Story time!</p>', unsafe_allow_html=True)
         with st.spinner("✍️ Writing a magical story just for you..."):
-            story = generate_story(caption) # Function name updated
+            story = generate_story(caption)
         st.markdown(f'<div class="story-box">📖 {story}</div>', unsafe_allow_html=True)
 
         # Stage 3: Story → Audio
         st.markdown('<p class="step-label">🔊 Step 4: Listen to your story!</p>', unsafe_allow_html=True)
         with st.spinner("🎵 Getting the story ready to read aloud..."):
-            audio_file_path = text2audio(story) # Function name updated
+            audio_file_path = text2audio(story)
 
         # Audio player
         with open(audio_file_path, "rb") as audio_file:
             audio_bytes = audio_file.read()
         st.audio(audio_bytes, format="audio/mp3")
 
-        # Celebration
+        # Success celebration[cite: 1]
         st.balloons()
         st.success("🎉 Your story is ready! Press play to listen! 🎧")
 
-    # Footer
     st.markdown('<p class="fun-footer">Made with ❤️ for little storytellers everywhere 🌈</p>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
