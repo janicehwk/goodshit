@@ -7,7 +7,9 @@
 # ── Import Part ─────────────────────────────────────────────────────────────
 import streamlit as st
 from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
+from gtts import gTTS
 from PIL import Image
+import tempfile
 
 # ── Function Part ───────────────────────────────────────────────────────────
 
@@ -30,34 +32,41 @@ def img2text(image_path):
 def generate_story(scenario):
     """
     Function 2: Story Generation.
-    Uses a text-generation model to expand the caption into a full narrative.[cite: 1]
+    Includes a deep learning fail-safe to guarantee the 50-100 word count.[cite: 1]
     """
     story_pipe = pipeline("text-generation", model="pranavpsv/genre-story-generator-v2")
     
-    # We feed the scenario to the model so you pass your assignment requirement,
-    # but format it so it can be cleanly removed from the final UI text.
-    hidden_context = f"Topic: {scenario}. "
-    prompt = f"{hidden_context}Once upon a time,"
-
-    story_results = story_pipe(
-        prompt, 
-        max_length=150, 
-        min_new_tokens=75, 
+    hidden_context = f"kids story: Once upon a time, there was {scenario}. It was a magical adventure because"
+    
+    # Initial generation attempt
+    result = story_pipe(
+        hidden_context, 
+        max_new_tokens=60, 
         do_sample=True, 
-        temperature=0.6,
-        top_p=0.9,
-        repetition_penalty=1.5
+        temperature=0.7,
+        repetition_penalty=1.2
     )
-    
-    story = story_results[0]['generated_text']
-    
-    # Clean up: Remove the hidden context so the user ONLY sees the story
-    story = story.replace(hidden_context, "").strip()
+    story = result[0]['generated_text']
 
-    # Final word count enforcement: 50-100 words[cite: 1]
+    # FAIL-SAFE: If the model stops early, force it to continue writing
+    # This solves the runtime/logic error of the model not meeting the 50 word minimum[cite: 1]
+    while len(story.split()) < 55: 
+        continue_result = story_pipe(
+            story, # Feed the short story back in as the new prompt
+            max_new_tokens=40, 
+            do_sample=True, 
+            temperature=0.7
+        )
+        story = continue_result[0]['generated_text']
+    
+    # Clean up: Remove the prompt tag so it looks nice for the user
+    story = story.replace("kids story:", "").strip()
+
+    # Final word count enforcement: Trim to a maximum of 100 words[cite: 1]
     words = story.split()
     if len(words) > 100:
         trimmed = " ".join(words[:100])
+        # Find the last punctuation mark to end the sentence cleanly
         for punctuation in [".", "!", "?"]:
             last_pos = trimmed.rfind(punctuation)
             if last_pos != -1:
@@ -71,23 +80,21 @@ def generate_story(scenario):
 def text2audio(story_text):
     """
     Function 3: Text-to-Speech Conversion.
-    Utilizes the Hugging Face Bark model for highly expressive, kid-friendly storytelling.[cite: 1]
+    Uses gTTS with a British accent (co.uk) for enhanced storytelling intonation, 
+    avoiding the memory crashes of heavier Hugging Face models.[cite: 1]
     """
-    # Bark is highly expressive and does NOT require phonemizer/espeak
-    tts_pipe = pipeline("text-to-speech", model="suno/bark-small")
-    
-    # 'v2/en_speaker_9' is a warm, expressive female voice preset perfect for bedtime stories
-    audio_data = tts_pipe(story_text, forward_params={"voice_preset": "v2/en_speaker_9"})
-    
-    return audio_data
+    # tld="co.uk" provides a dynamic, audiobook-style narrator voice that kids love
+    tts = gTTS(text=story_text, lang="en", tld="co.uk", slow=False)
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    tts.save(temp_file.name)
+    return temp_file.name
 
 
 # ── Main Part (Function 4) ──────────────────────────────────────────────────
 
 def main():
     """
-    Function 4: Streamlit UI & Modular Logic.
-    Coordinates the application flow to solve the storytelling business problem.[cite: 1]
+    Function 4: Streamlit UI & Modular Logic.[cite: 1]
     """
     st.set_page_config(
         page_title="Magic Story Machine",
@@ -115,7 +122,6 @@ def main():
     uploaded_file = st.file_uploader("Choose a fun image...", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
 
     if uploaded_file is not None:
-        # Saving file locally for processing[cite: 1]
         bytes_data = uploaded_file.getvalue()
         file_path = uploaded_file.name
         with open(file_path, "wb") as f:
@@ -123,27 +129,24 @@ def main():
 
         st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
 
-        # Stage 1: Image to Text
         st.markdown('<p class="step-label">🔍 Step 2: What\'s in your picture?</p>', unsafe_allow_html=True)
         with st.spinner("🧐 Looking at your picture really carefully..."):
             scenario = img2text(file_path)
         st.markdown(f'<div class="caption-box">I see: <strong>{scenario}</strong></div>', unsafe_allow_html=True)
 
-        # Stage 2: Text to Story
         st.markdown('<p class="step-label">📝 Step 3: Story time!</p>', unsafe_allow_html=True)
         with st.spinner("✍️ Writing a magical story just for you..."):
             story = generate_story(scenario)
         st.markdown(f'<div class="story-box">📖 {story}</div>', unsafe_allow_html=True)
 
-        # Stage 3: Story to Audio
         st.markdown('<p class="step-label">🔊 Step 4: Listen to your story!</p>', unsafe_allow_html=True)
-        with st.spinner("🎵 Getting the story ready to read aloud... (Bark is a powerful model, this may take a moment!)"):
-            audio_data = text2audio(story)
+        with st.spinner("🎵 Getting the narrator ready..."):
+            audio_file_path = text2audio(story)
 
-        # Streamlit can play the audio array directly from the Hugging Face pipeline output
-        st.audio(audio_data["audio"][0], sample_rate=audio_data["sampling_rate"])
+        with open(audio_file_path, "rb") as audio_file:
+            audio_bytes = audio_file.read()
+        st.audio(audio_bytes, format="audio/mp3")
 
-        # Visual success feedback
         st.balloons()
         st.success("🎉 Your story is ready! Press play to listen! 🎧")
 
