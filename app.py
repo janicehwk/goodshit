@@ -5,17 +5,16 @@
 # Models Used:
 #   1. Image Captioning — Salesforce/blip-image-captioning-base
 #   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
-#   3. Text-to-Speech   — parler-tts/parler-tts-tiny-v1
+#   3. Text-to-Speech   — facebook/mms-tts-eng
 # ============================================================================
 
 # ── Import Part ─────────────────────────────────────────────────────────────
 import streamlit as st
-from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration, AutoTokenizer
-from parler_tts import ParlerTTSForConditionalGeneration
+from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import tempfile
-import soundfile as sf
 import numpy as np
+import scipy.io.wavfile
 
 
 # ── Function Part ───────────────────────────────────────────────────────────
@@ -25,7 +24,7 @@ def img2text(image_path):
     Convert an uploaded image into a text caption.
     Uses the BLIP image captioning model, loaded directly via
     BlipProcessor and BlipForConditionalGeneration for compatibility
-    with the latest version of the transformers library.
+    with the latest transformers library.
 
     Parameters:
         image_path (str): File path of the uploaded image.
@@ -43,10 +42,10 @@ def img2text(image_path):
     # Open the image and convert to RGB format
     image = Image.open(image_path).convert("RGB")
 
-    # Process the image into model-ready format
+    # Process the image into model-ready tensors
     inputs = processor(image, return_tensors="pt")
 
-    # Generate the caption from the image
+    # Generate and decode the caption
     output = model.generate(**inputs, max_new_tokens=50)
     caption = processor.decode(output[0], skip_special_tokens=True)
     return caption
@@ -55,19 +54,18 @@ def img2text(image_path):
 def text2story(caption):
     """
     Generate a short kid-friendly story (50-100 words) from an image caption.
-    Uses a GPT2-based text generation model. The prompt is written to produce
-    simple, cheerful stories suitable for children aged 3-10.
+    Uses a GPT2-based text generation model. The prompt is designed to produce
+    simple, cheerful, age-appropriate stories for children aged 3-10.
 
     Parameters:
         caption (str): A short image caption to build the story around.
     Returns:
-        str: A fun, age-appropriate story for young children.
+        str: A fun story between 50-100 words for young children.
     """
     # Build a kid-friendly story prompt
     prompt = (
-        f"Write a short, happy story for a 5-year-old child about {caption}. "
-        f"Use simple words and a happy ending. "
-        f"Once upon a time, {caption}. "
+        f"Once upon a time, there was {caption}. "
+        f"It was a beautiful sunny day and everyone was happy. "
     )
 
     # Load the text generation model
@@ -76,31 +74,36 @@ def text2story(caption):
         model="Prashant-karwasra/GPT2_text_generation_model"
     )
 
-    # Generate the story with controlled length
-    result = story_generator(
-        prompt,
-        max_length=150,
-        num_return_sequences=1,
-        do_sample=True,
-        temperature=0.7
-    )
-    story = result[0]["generated_text"]
+    # Try up to 3 times to get a story with at least 50 words
+    story = ""
+    for attempt in range(3):
+        result = story_generator(
+            prompt,
+            max_length=180,
+            num_return_sequences=1,
+            do_sample=True,
+            temperature=0.8 + (attempt * 0.1)
+        )
+        story = result[0]["generated_text"]
 
-    # Keep only the story part starting from "Once upon a time"
-    story_start = story.find("Once upon a time")
-    if story_start != -1:
-        story = story[story_start:]
+        # Check if we have enough words
+        if len(story.split()) >= 50:
+            break
 
-    # Trim the story to stay within 50-100 words
+    # Trim the story to stay within 100 words maximum
     words = story.split()
     if len(words) > 100:
         trimmed = " ".join(words[:100])
-        # End at the last complete sentence
-        for punct in [".", "!", "?"]:
-            last_pos = trimmed.rfind(punct)
-            if last_pos != -1:
-                trimmed = trimmed[: last_pos + 1]
-                break
+        # End at the last complete sentence within 100 words
+        last_period = max(
+            trimmed.rfind("."),
+            trimmed.rfind("!"),
+            trimmed.rfind("?")
+        )
+        if last_period != -1:
+            trimmed = trimmed[: last_period + 1]
+        else:
+            trimmed += "."
         story = trimmed
 
     return story
@@ -108,47 +111,34 @@ def text2story(caption):
 
 def text2audio(story_text):
     """
-    Convert a story into an audio file using Parler-TTS Tiny v1.
-    This model produces natural, expressive speech. A voice description
-    prompt is used to create a warm, friendly tone suitable for
-    reading children's stories aloud.
+    Convert a story into an audio file using the Facebook MMS-TTS model.
+    This is a lightweight Hugging Face text-to-speech model that produces
+    clear English speech suitable for children to listen to.
 
     Parameters:
         story_text (str): The story text to convert to speech.
     Returns:
         str: File path of the generated audio (.wav) file.
     """
-    # Load the Parler TTS model and tokenizer
-    model = ParlerTTSForConditionalGeneration.from_pretrained(
-        "parler-tts/parler-tts-tiny-v1"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(
-        "parler-tts/parler-tts-tiny-v1"
+    # Load the TTS model
+    tts_model = pipeline(
+        "text-to-speech",
+        model="facebook/mms-tts-eng"
     )
 
-    # Describe the voice style for a warm, kid-friendly reading
-    voice_description = (
-        "A female speaker reads a children's story with a warm, "
-        "friendly, and expressive tone at a moderate speed. "
-        "The recording is clear and close up."
-    )
-
-    # Tokenize the voice description and the story text
-    input_ids = tokenizer(voice_description, return_tensors="pt").input_ids
-    prompt_input_ids = tokenizer(story_text, return_tensors="pt").input_ids
+    # The MMS model works best with lowercase text
+    clean_text = story_text.lower()
 
     # Generate the audio
-    generation = model.generate(
-        input_ids=input_ids,
-        prompt_input_ids=prompt_input_ids
-    )
-
-    # Convert to numpy array
-    audio_array = generation.cpu().numpy().squeeze()
+    speech = tts_model(clean_text)
 
     # Save to a temporary WAV file so Streamlit can play it
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-    sf.write(temp_file.name, audio_array, model.config.sampling_rate)
+    scipy.io.wavfile.write(
+        temp_file.name,
+        rate=speech["sampling_rate"],
+        data=np.array(speech["audio"][0])
+    )
     return temp_file.name
 
 
