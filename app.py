@@ -2,10 +2,10 @@
 # Program Title: Magic Story Machine - A Storytelling App for Kids
 # Description:   A kid-friendly Streamlit application that turns uploaded
 #                images into fun audio stories for children aged 3-10.
-# Models Used:
+# Pipeline:
 #   1. Image Captioning — Salesforce/blip-image-captioning-base
 #   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
-#   3. Text-to-Speech   — facebook/mms-tts-eng
+#   3. Text-to-Speech   — facebook/mms-tts-eng (Hugging Face TTS)
 # ============================================================================
 
 # ── Import Part ─────────────────────────────────────────────────────────────
@@ -13,295 +13,222 @@ import streamlit as st
 from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 from PIL import Image
 import tempfile
-import numpy as np
 import scipy.io.wavfile
 
 
 # ── Function Part ───────────────────────────────────────────────────────────
 
-def img2text(image_path):
+def img2text(url):
     """
-    Convert an uploaded image into a text caption.
-    Uses the BLIP image captioning model, loaded directly via
-    BlipProcessor and BlipForConditionalGeneration for compatibility
-    with the latest transformers library.
+    Generate a text caption from an uploaded image.
+    Uses the BLIP image captioning model loaded directly via
+    BlipProcessor and BlipForConditionalGeneration for compatibility.
 
     Parameters:
-        image_path (str): File path of the uploaded image.
+        url (str): File path of the uploaded image.
     Returns:
         str: A short caption describing what is in the image.
     """
-    # Load the BLIP processor and model
-    processor = BlipProcessor.from_pretrained(
-        "Salesforce/blip-image-captioning-base"
-    )
-    model = BlipForConditionalGeneration.from_pretrained(
-        "Salesforce/blip-image-captioning-base"
-    )
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    cap_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
 
-    # Open the image and convert to RGB format
-    image = Image.open(image_path).convert("RGB")
-
-    # Process the image into model-ready tensors
+    image = Image.open(url).convert("RGB")
     inputs = processor(image, return_tensors="pt")
 
-    # Generate and decode the caption
-    output = model.generate(**inputs, max_new_tokens=50)
+    output = cap_model.generate(**inputs, max_new_tokens=50)
     caption = processor.decode(output[0], skip_special_tokens=True)
     return caption
 
 
-def text2story(caption):
+def text2story(scenario):
     """
-    Generate a short kid-friendly story (50-100 words) from an image caption.
-    Uses a GPT2-based text generation model. The prompt is designed to produce
-    simple, cheerful, age-appropriate stories for children aged 3-10.
+    Generate a kid-friendly story (50-100 words) from an image caption.
+    Uses a GPT2-based text generation model. Includes a retry loop to
+    strictly enforce the 50-word minimum requirement.
 
     Parameters:
-        caption (str): A short image caption to build the story around.
+        scenario (str): A short image caption to build the story around.
     Returns:
-        str: A fun story between 50-100 words for young children.
+        str: A fun story between 50-100 words for children aged 3-10.
     """
-    # Build a kid-friendly story prompt
-    prompt = (
-        f"Once upon a time, there was {caption}. "
-        f"It was a beautiful sunny day and everyone was happy. "
-    )
+    prompt = f"Once upon a time, {scenario}. "
 
-    # Load the text generation model
-    story_generator = pipeline(
+    story_pipe = pipeline(
         "text-generation",
         model="Prashant-karwasra/GPT2_text_generation_model"
     )
 
-    # Try up to 3 times to get a story with at least 50 words
-    story = ""
+    raw_story = ""
+
+    # Try up to 3 times to guarantee at least 50 words
     for attempt in range(3):
-        result = story_generator(
+        story_results = story_pipe(
             prompt,
-            max_length=180,
+            min_new_tokens=70,
+            max_new_tokens=150,
             num_return_sequences=1,
             do_sample=True,
-            temperature=0.8 + (attempt * 0.1)
+            temperature=0.85 + (attempt * 0.1),
+            repetition_penalty=1.2,
+            truncation=True
         )
-        story = result[0]["generated_text"]
 
-        # Check if we have enough words
-        if len(story.split()) >= 50:
+        raw_story = story_results[0]["generated_text"]
+
+        word_count = len(raw_story.split())
+        if word_count >= 50:
             break
 
-    # Trim the story to stay within 100 words maximum
-    words = story.split()
+    # Trim to stay within 100 words maximum
+    words = raw_story.split()
     if len(words) > 100:
-        trimmed = " ".join(words[:100])
-        # End at the last complete sentence within 100 words
-        last_period = max(
-            trimmed.rfind("."),
-            trimmed.rfind("!"),
-            trimmed.rfind("?")
-        )
-        if last_period != -1:
-            trimmed = trimmed[: last_period + 1]
-        else:
-            trimmed += "."
-        story = trimmed
+        words = words[:100]
+        trimmed_story = " ".join(words)
 
-    return story
+        last_punctuation = max(
+            trimmed_story.rfind('.'),
+            trimmed_story.rfind('!'),
+            trimmed_story.rfind('?')
+        )
+
+        if last_punctuation != -1:
+            trimmed_story = trimmed_story[:last_punctuation + 1]
+        else:
+            trimmed_story += "..."
+
+        return trimmed_story
+
+    return raw_story
 
 
 def text2audio(story_text):
     """
-    Convert a story into an audio file using the Facebook MMS-TTS model.
-    This is a lightweight Hugging Face text-to-speech model that produces
-    clear English speech suitable for children to listen to.
+    Convert a story string into a natural audio file using
+    Facebook's MMS-TTS model from Hugging Face.
 
     Parameters:
         story_text (str): The story text to convert to speech.
     Returns:
         str: File path of the generated audio (.wav) file.
     """
-    # Load the TTS model
-    tts_model = pipeline(
-        "text-to-speech",
-        model="facebook/mms-tts-eng"
-    )
+    tts_pipe = pipeline("text-to-speech", model="facebook/mms-tts-eng")
 
-    # The MMS model works best with lowercase text
+    # The MMS model requires text to be lowercase to read it properly
     clean_text = story_text.lower()
 
-    # Generate the audio
-    speech = tts_model(clean_text)
+    # Generate the audio array
+    speech = tts_pipe(clean_text)
 
     # Save to a temporary WAV file so Streamlit can play it
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+
     scipy.io.wavfile.write(
         temp_file.name,
         rate=speech["sampling_rate"],
-        data=np.array(speech["audio"][0])
+        data=speech["audio"][0]
     )
+
     return temp_file.name
 
 
+# ── Main Part ───────────────────────────────────────────────────────────────
 def main():
     """
-    Main function that runs the Streamlit application.
-    Sets up the kid-friendly UI and runs the three-stage pipeline:
-    image upload → caption → story → audio playback.
+    Main function that runs the entire Streamlit application.
+    Handles page configuration, kid-friendly UI styling, session state,
+    image upload, and orchestrates the three-stage pipeline:
+    image → caption → story → audio playback.
     """
 
-    # ── Page Setup ──────────────────────────────────────────────────────
+    # ── Page Configuration ──────────────────────────────────────────────
     st.set_page_config(
         page_title="Magic Story Machine",
         page_icon="🪄",
         layout="centered"
     )
 
-    # ── Kid-Friendly CSS Styling ────────────────────────────────────────
+    # ── Custom CSS for Kid-Friendly UI ──────────────────────────────────
     st.markdown("""
     <style>
-        .stApp {
-            background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
-        }
-        .kid-title {
-            text-align: center;
-            font-size: 3rem;
-            font-weight: 800;
-            color: #FF6B6B;
-            text-shadow: 3px 3px 0px #FFE66D;
-            margin-bottom: 0;
-        }
-        .kid-subtitle {
-            text-align: center;
-            font-size: 1.3rem;
-            color: #6C5CE7;
-            margin-top: 0;
-            margin-bottom: 30px;
-        }
-        .step-label {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #2D3436;
-            background: #FFEAA7;
-            padding: 8px 16px;
-            border-radius: 20px;
-            display: inline-block;
-            margin-bottom: 10px;
-        }
-        .story-box {
-            background: #FFFFFF;
-            border: 4px dashed #6C5CE7;
-            border-radius: 20px;
-            padding: 25px;
-            font-size: 1.15rem;
-            line-height: 1.8;
-            color: #2D3436;
-            margin: 15px 0;
-        }
-        .caption-box {
-            background: #DFE6E9;
-            border-radius: 15px;
-            padding: 15px 20px;
-            font-size: 1.05rem;
-            color: #2D3436;
-            margin: 10px 0;
-        }
-        .fun-footer {
-            text-align: center;
-            color: #636E72;
-            font-size: 0.9rem;
-            margin-top: 40px;
-            padding: 10px;
-        }
+        .stApp { background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%); }
+        .step-label { font-size: 1.2rem; font-weight: 700; color: #2D3436; background: #FFEAA7; padding: 8px 16px; border-radius: 20px; display: inline-block; margin-bottom: 10px; }
+        .story-box { background: #FFFFFF; border: 4px dashed #6C5CE7; border-radius: 20px; padding: 25px; font-size: 1.15rem; line-height: 1.8; color: #2D3436; margin: 15px 0; }
+        .caption-box { background: #DFE6E9; border-radius: 15px; padding: 15px 20px; font-size: 1.05rem; color: #2D3436; margin: 10px 0; }
+        .fun-footer { text-align: center; color: #636E72; font-size: 0.9rem; margin-top: 40px; padding: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
+    # ── Initialize Session States for Reset Functionality ───────────────
+    if 'uploader_key' not in st.session_state:
+        st.session_state.uploader_key = 0
+    if 'story_finished' not in st.session_state:
+        st.session_state.story_finished = False
+
     # ── App Header ──────────────────────────────────────────────────────
-    st.markdown(
-        '<p class="kid-title">🪄 Magic Story Machine 🪄</p>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<p class="kid-subtitle">'
-        'Upload a picture and watch it turn into a story! 📖✨'
-        '</p>',
-        unsafe_allow_html=True,
-    )
+    st.title("🪄 Magic Story Machine 🪄")
+    st.subheader("Upload a picture and watch it turn into a story! 📖✨")
 
     # ── Step 1: Image Upload ────────────────────────────────────────────
-    st.markdown(
-        '<p class="step-label">📸 Step 1: Pick a Picture!</p>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
+
     uploaded_file = st.file_uploader(
         "Choose a fun image...",
         type=["jpg", "jpeg", "png"],
         label_visibility="collapsed",
+        key=f"uploader_{st.session_state.uploader_key}"
     )
 
     if uploaded_file is not None:
-        # Save the uploaded file locally so the model can read it
+        # Save uploaded file locally for the model to read
         bytes_data = uploaded_file.getvalue()
         file_path = uploaded_file.name
-        with open(file_path, "wb") as file:
-            file.write(bytes_data)
+        with open(file_path, "wb") as f:
+            f.write(bytes_data)
 
-        # Display the uploaded image
-        st.image(
-            uploaded_file,
-            caption="🖼️ Your awesome picture!",
-            use_container_width=True,
-        )
+        st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
 
-        # ── Step 2: Image → Caption (using img2text function) ──────────
-        st.markdown(
-            '<p class="step-label">🔍 Step 2: What\'s in your picture?</p>',
-            unsafe_allow_html=True,
-        )
+        # ── Step 2: Image → Caption ─────────────────────────────────────
+        st.markdown('<p class="step-label">🔍 Step 2: What\'s in your picture?</p>', unsafe_allow_html=True)
         with st.spinner("🧐 Looking at your picture really carefully..."):
             scenario = img2text(file_path)
-        st.markdown(
-            f'<div class="caption-box">'
-            f'I see: <strong>{scenario}</strong>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown(f'<div class="caption-box">I see: <strong>{scenario}</strong></div>', unsafe_allow_html=True)
 
-        # ── Step 3: Caption → Story (using text2story function) ────────
-        st.markdown(
-            '<p class="step-label">📝 Step 3: Story time!</p>',
-            unsafe_allow_html=True,
-        )
+        # ── Step 3: Caption → Story ─────────────────────────────────────
+        st.markdown('<p class="step-label">📝 Step 3: Story time!</p>', unsafe_allow_html=True)
+        st.text('Generating a story...')
+
         with st.spinner("✍️ Writing a magical story just for you..."):
             story = text2story(scenario)
-        st.markdown(
-            f'<div class="story-box">📖 {story}</div>',
-            unsafe_allow_html=True,
-        )
 
-        # ── Step 4: Story → Audio (using text2audio function) ──────────
-        st.markdown(
-            '<p class="step-label">🔊 Step 4: Listen to your story!</p>',
-            unsafe_allow_html=True,
-        )
+        st.write(f"**Story:** {story}")
+
+        # ── Step 4: Story → Audio ───────────────────────────────────────
+        st.markdown('<p class="step-label">🔊 Step 4: Listen to your story!</p>', unsafe_allow_html=True)
         with st.spinner("🎵 Getting the story ready to read aloud..."):
             audio_file_path = text2audio(story)
 
-        # Play the generated audio
+        # Play the WAV file generated by the Facebook MMS model
         with open(audio_file_path, "rb") as audio_file:
             audio_bytes = audio_file.read()
         st.audio(audio_bytes, format="audio/wav")
 
-        # Celebration
         st.balloons()
         st.success("🎉 Your story is ready! Press play to listen! 🎧")
+        st.session_state.story_finished = True
 
-    # Footer
-    st.markdown(
-        '<p class="fun-footer">'
-        'Made with ❤️ for little storytellers everywhere 🌈'
-        '</p>',
-        unsafe_allow_html=True,
-    )
+        # ── Create Another Story Flow ───────────────────────────────────
+        if st.session_state.story_finished:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🔄 Create Another Story!"):
+                widget_key = f"uploader_{st.session_state.uploader_key}"
+                if widget_key in st.session_state:
+                    del st.session_state[widget_key]
+
+                st.session_state.uploader_key += 1
+                st.session_state.story_finished = False
+                st.rerun()
+
+    st.markdown('<p class="fun-footer">Made with ❤️ for little storytellers everywhere 🌈</p>', unsafe_allow_html=True)
 
 
 # ── Run the App ─────────────────────────────────────────────────────────────
