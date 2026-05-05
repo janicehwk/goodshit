@@ -33,13 +33,18 @@ blip_processor, blip_model, story_pipeline = load_ai_models()
 
 # ── Function Part ───────────────────────────────────────────────────────────
 
-def generate_caption(image_path):
+def img2text(url):
     """
     Generate a text caption from an uploaded image.
     Uses the globally cached BLIP image captioning models.
+    
+    Parameters:
+        url (str): File path or URL of the uploaded image.
+    Returns:
+        str: A short caption describing the image content.
     """
     # Open and process the image
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(url).convert("RGB")
     inputs = blip_processor(image, return_tensors="pt")
 
     # Generate the caption
@@ -123,16 +128,6 @@ st.markdown("""
         background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
     }
 
-    /* Title styling */
-    .kid-title {
-        text-align: center;
-        font-size: 3rem;
-        font-weight: 800;
-        color: #FF6B6B;
-        text-shadow: 3px 3px 0px #FFE66D;
-        margin-bottom: 0;
-    }
-
     /* Subtitle styling */
     .kid-subtitle {
         text-align: center;
@@ -195,8 +190,8 @@ if 'uploader_key' not in st.session_state:
 if 'story_finished' not in st.session_state:
     st.session_state.story_finished = False
 
-# App header with playful styling
-st.markdown('<p class="kid-title">🪄 Magic Story Machine 🪄</p>', unsafe_allow_html=True)
+# App header using standard st.title
+st.title("🪄 Magic Story Machine 🪄")
 st.markdown(
     '<p class="kid-subtitle">Upload a picture and watch it turn into a story! 📖✨</p>',
     unsafe_allow_html=True,
@@ -229,7 +224,8 @@ if uploaded_file is not None:
         unsafe_allow_html=True,
     )
     with st.spinner("🧐 Looking at your picture really carefully..."):
-        caption = generate_caption(file_path)
+        # Updated function call to img2text
+        caption = img2text(file_path)
     st.markdown(
         f'<div class="caption-box">I see: <strong>{caption}</strong></div>',
         unsafe_allow_html=True,
