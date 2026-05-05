@@ -28,7 +28,7 @@ def load_ai_models():
     
     return processor, cap_model, story_gen
 
-# Initialize models in memory globally
+# Initialize models in memory globally so functions can access them
 blip_processor, blip_model, story_pipeline = load_ai_models()
 
 # ── Function Part ───────────────────────────────────────────────────────────
@@ -113,171 +113,166 @@ def text_to_audio(story_text):
     return temp_file.name
 
 
-# ── Page Configuration ──────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Magic Story Machine",
-    page_icon="🪄",
-    layout="centered"
-)
-
-# ── Custom CSS for Kid-Friendly UI ──────────────────────────────────────────
-st.markdown("""
-<style>
-    /* Fun background gradient */
-    .stApp {
-        background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
-    }
-
-    /* Subtitle styling */
-    .kid-subtitle {
-        text-align: center;
-        font-size: 1.3rem;
-        color: #6C5CE7;
-        margin-top: 0;
-        margin-bottom: 30px;
-    }
-
-    /* Step labels */
-    .step-label {
-        font-size: 1.2rem;
-        font-weight: 700;
-        color: #2D3436;
-        background: #FFEAA7;
-        padding: 8px 16px;
-        border-radius: 20px;
-        display: inline-block;
-        margin-bottom: 10px;
-    }
-
-    /* Story box */
-    .story-box {
-        background: #FFFFFF;
-        border: 4px dashed #6C5CE7;
-        border-radius: 20px;
-        padding: 25px;
-        font-size: 1.15rem;
-        line-height: 1.8;
-        color: #2D3436;
-        margin: 15px 0;
-    }
-
-    /* Caption box */
-    .caption-box {
-        background: #DFE6E9;
-        border-radius: 15px;
-        padding: 15px 20px;
-        font-size: 1.05rem;
-        color: #2D3436;
-        margin: 10px 0;
-    }
-
-    /* Fun footer */
-    .fun-footer {
-        text-align: center;
-        color: #636E72;
-        font-size: 0.9rem;
-        margin-top: 40px;
-        padding: 10px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ── Main Part ───────────────────────────────────────────────────────────────
-
-# --- Initialize Session States for Reset Functionality ---
-if 'uploader_key' not in st.session_state:
-    st.session_state.uploader_key = 0
-if 'story_finished' not in st.session_state:
-    st.session_state.story_finished = False
-
-# App header using standard st.title
-st.title("🪄 Magic Story Machine 🪄")
-st.subtitle("Upload a picture and watch it turn into a story! 📖✨")
-
-# Image upload section
-st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
-
-# Added dynamic key to file_uploader to allow clearing
-uploaded_file = st.file_uploader(
-    "Choose a fun image...",
-    type=["jpg", "jpeg", "png"],
-    label_visibility="collapsed",
-    key=f"uploader_{st.session_state.uploader_key}"
-)
-
-if uploaded_file is not None:
-    # Save uploaded file locally for the model to read
-    bytes_data = uploaded_file.getvalue()
-    file_path = uploaded_file.name
-    with open(file_path, "wb") as f:
-        f.write(bytes_data)
-
-    # Display the uploaded image
-    st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
-
-    # ── Stage 1: Image → Caption ────────────────────────────────────────
-    st.markdown(
-        '<p class="step-label">🔍 Step 2: What\'s in your picture?</p>',
-        unsafe_allow_html=True,
-    )
-    with st.spinner("🧐 Looking at your picture really carefully..."):
-        # Updated function call to img2text
-        caption = img2text(file_path)
-    st.markdown(
-        f'<div class="caption-box">I see: <strong>{caption}</strong></div>',
-        unsafe_allow_html=True,
+# ── Main App Execution Flow ─────────────────────────────────────────────────
+def main():
+    # ── Page Configuration ──
+    # (Must be the first Streamlit command in the script)
+    st.set_page_config(
+        page_title="Magic Story Machine",
+        page_icon="🪄",
+        layout="centered"
     )
 
-    # ── Stage 2: Caption → Story ────────────────────────────────────────
+    # ── Custom CSS for Kid-Friendly UI ──
+    st.markdown("""
+    <style>
+        /* Fun background gradient */
+        .stApp {
+            background: linear-gradient(135deg, #FFDEE9 0%, #B5FFFC 100%);
+        }
+
+        /* Step labels */
+        .step-label {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #2D3436;
+            background: #FFEAA7;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+
+        /* Story box */
+        .story-box {
+            background: #FFFFFF;
+            border: 4px dashed #6C5CE7;
+            border-radius: 20px;
+            padding: 25px;
+            font-size: 1.15rem;
+            line-height: 1.8;
+            color: #2D3436;
+            margin: 15px 0;
+        }
+
+        /* Caption box */
+        .caption-box {
+            background: #DFE6E9;
+            border-radius: 15px;
+            padding: 15px 20px;
+            font-size: 1.05rem;
+            color: #2D3436;
+            margin: 10px 0;
+        }
+
+        /* Fun footer */
+        .fun-footer {
+            text-align: center;
+            color: #636E72;
+            font-size: 0.9rem;
+            margin-top: 40px;
+            padding: 10px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- Initialize Session States for Reset Functionality ---
+    if 'uploader_key' not in st.session_state:
+        st.session_state.uploader_key = 0
+    if 'story_finished' not in st.session_state:
+        st.session_state.story_finished = False
+
+    # App header using standard st.title and st.subheader
+    st.title("🪄 Magic Story Machine 🪄")
+    st.subheader("Upload a picture and watch it turn into a story! 📖✨")
+
+    # Image upload section
+    st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
+
+    # Added dynamic key to file_uploader to allow clearing
+    uploaded_file = st.file_uploader(
+        "Choose a fun image...",
+        type=["jpg", "jpeg", "png"],
+        label_visibility="collapsed",
+        key=f"uploader_{st.session_state.uploader_key}"
+    )
+
+    if uploaded_file is not None:
+        # Save uploaded file locally for the model to read
+        bytes_data = uploaded_file.getvalue()
+        file_path = uploaded_file.name
+        with open(file_path, "wb") as f:
+            f.write(bytes_data)
+
+        # Display the uploaded image
+        st.image(uploaded_file, caption="🖼️ Your awesome picture!", use_container_width=True)
+
+        # ── Stage 1: Image → Caption ────────────────────────────────────────
+        st.markdown(
+            '<p class="step-label">🔍 Step 2: What\'s in your picture?</p>',
+            unsafe_allow_html=True,
+        )
+        with st.spinner("🧐 Looking at your picture really carefully..."):
+            caption = img2text(file_path)
+        st.markdown(
+            f'<div class="caption-box">I see: <strong>{caption}</strong></div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Stage 2: Caption → Story ────────────────────────────────────────
+        st.markdown(
+            '<p class="step-label">📝 Step 3: Story time!</p>',
+            unsafe_allow_html=True,
+        )
+        with st.spinner("✍️ Writing a magical story just for you..."):
+            story = generate_story(caption)
+        st.markdown(
+            f'<div class="story-box">📖 {story}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Stage 3: Story → Audio ──────────────────────────────────────────
+        st.markdown(
+            '<p class="step-label">🔊 Step 4: Listen to your story!</p>',
+            unsafe_allow_html=True,
+        )
+        with st.spinner("🎵 Getting the story ready to read aloud..."):
+            audio_file_path = text_to_audio(story)
+
+        # Audio player
+        with open(audio_file_path, "rb") as audio_file:
+            audio_bytes = audio_file.read()
+        st.audio(audio_bytes, format="audio/mp3")
+
+        # Celebration message
+        st.balloons()
+        st.success("🎉 Your story is ready! Press play to listen! 🎧")
+        
+        # Flag that the story is done
+        st.session_state.story_finished = True
+
+        # --- Create Another Story Flow ---
+        if st.session_state.story_finished:
+            st.markdown("<br>", unsafe_allow_html=True) # Adds a little spacing
+            if st.button("🔄 Create Another Story!"):
+                # Delete the file from Streamlit's internal cache immediately
+                widget_key = f"uploader_{st.session_state.uploader_key}"
+                if widget_key in st.session_state:
+                    del st.session_state[widget_key]
+
+                # Change the uploader key to force Streamlit to clear the file UI
+                st.session_state.uploader_key += 1
+                # Reset the finished flag
+                st.session_state.story_finished = False
+                # Rerun the app instantly
+                st.rerun()
+
+    # Footer
     st.markdown(
-        '<p class="step-label">📝 Step 3: Story time!</p>',
+        '<p class="fun-footer">Made with ❤️ for little storytellers everywhere 🌈</p>',
         unsafe_allow_html=True,
     )
-    with st.spinner("✍️ Writing a magical story just for you..."):
-        story = generate_story(caption)
-    st.markdown(
-        f'<div class="story-box">📖 {story}</div>',
-        unsafe_allow_html=True,
-    )
 
-    # ── Stage 3: Story → Audio ──────────────────────────────────────────
-    st.markdown(
-        '<p class="step-label">🔊 Step 4: Listen to your story!</p>',
-        unsafe_allow_html=True,
-    )
-    with st.spinner("🎵 Getting the story ready to read aloud..."):
-        audio_file_path = text_to_audio(story)
-
-    # Audio player
-    with open(audio_file_path, "rb") as audio_file:
-        audio_bytes = audio_file.read()
-    st.audio(audio_bytes, format="audio/mp3")
-
-    # Celebration message
-    st.balloons()
-    st.success("🎉 Your story is ready! Press play to listen! 🎧")
-    
-    # Flag that the story is done
-    st.session_state.story_finished = True
-
-    # --- Create Another Story Flow ---
-    if st.session_state.story_finished:
-        st.markdown("<br>", unsafe_allow_html=True) # Adds a little spacing
-        if st.button("🔄 Create Another Story!"):
-            # Delete the file from Streamlit's internal cache immediately
-            widget_key = f"uploader_{st.session_state.uploader_key}"
-            if widget_key in st.session_state:
-                del st.session_state[widget_key]
-
-            # Change the uploader key to force Streamlit to clear the file UI
-            st.session_state.uploader_key += 1
-            # Reset the finished flag
-            st.session_state.story_finished = False
-            # Rerun the app instantly
-            st.rerun()
-
-# Footer
-st.markdown(
-    '<p class="fun-footer">Made with ❤️ for little storytellers everywhere 🌈</p>',
-    unsafe_allow_html=True,
-)
+# ── Execute Main Function ───────────────────────────────────────────────────
+if __name__ == "__main__":
+    main()
