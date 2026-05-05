@@ -2,6 +2,5 @@ streamlit
 transformers<5.0.0
 torch
 Pillow
-soundfile
 numpy
-git+https://github.com/huggingface/parler-tts.git
+scipy
