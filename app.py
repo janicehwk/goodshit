@@ -4,7 +4,7 @@
 #                images into fun audio stories for children aged 3-10.
 # Pipeline:
 #   1. Image Captioning — Salesforce/blip-image-captioning-base
-#   2. Story Generation — Prashant-karwasra/GPT2_text_generation_model
+#   2. Story Generation — facebook/opt-350m
 #   3. Text-to-Speech   — facebook/mms-tts-eng (Hugging Face TTS)
 # ============================================================================
 
@@ -43,7 +43,7 @@ def img2text(url):
 def text2story(scenario):
     """
     Generate a kid-friendly story (50-100 words) from an image caption.
-    Uses a GPT2-based text generation model. Includes a retry loop to
+    Uses Meta's OPT-350M text generation model. Includes a retry loop to
     strictly enforce the 50-word minimum requirement.
 
     Parameters:
@@ -61,7 +61,7 @@ def text2story(scenario):
 
     story_pipe = pipeline(
         "text-generation",
-        model="Prashant-karwasra/GPT2_text_generation_model"
+        model="facebook/opt-350m"
     )
 
     raw_story = ""
