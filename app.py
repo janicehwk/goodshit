@@ -15,43 +15,43 @@ from gtts import gTTS
 from PIL import Image
 import tempfile
 
+# ── Model Caching Part (Crucial for Speed) ──────────────────────────────────
+@st.cache_resource(show_spinner="Loading Magic AI Models... (This only happens once!)")
+def load_ai_models():
+    """
+    Loads all heavy AI models into memory once and caches them.
+    This prevents the app from taking a long time to reload when buttons are clicked.
+    """
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    cap_model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    story_gen = pipeline("text-generation", model="Prashant-karwasra/GPT2_text_generation_model")
+    
+    return processor, cap_model, story_gen
+
+# Initialize models in memory globally
+blip_processor, blip_model, story_pipeline = load_ai_models()
+
 # ── Function Part ───────────────────────────────────────────────────────────
 
 def generate_caption(image_path):
     """
     Generate a text caption from an uploaded image.
-    Uses the BLIP image captioning model from Hugging Face.
-    Loads the model directly via BlipProcessor and BlipForConditionalGeneration
-    for maximum compatibility.
-    
-    Parameters:
-        image_path (str): File path of the uploaded image.
-    Returns:
-        str: A short caption describing the image content.
+    Uses the globally cached BLIP image captioning models.
     """
-    # Load the processor and model directly
-    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-
     # Open and process the image
     image = Image.open(image_path).convert("RGB")
-    inputs = processor(image, return_tensors="pt")
+    inputs = blip_processor(image, return_tensors="pt")
 
     # Generate the caption
-    output = model.generate(**inputs, max_new_tokens=50)
-    caption = processor.decode(output[0], skip_special_tokens=True)
+    output = blip_model.generate(**inputs, max_new_tokens=50)
+    caption = blip_processor.decode(output[0], skip_special_tokens=True)
     return caption
 
 
 def generate_story(caption):
     """
     Generate a kid-friendly story (50-100 words) from an image caption.
-    Uses a GPT2-based text generation model from Hugging Face.
-    
-    Parameters:
-        caption (str): A short image caption to base the story on.
-    Returns:
-        str: A short, fun story suitable for children aged 3-10.
+    Uses the globally cached GPT2 text generation pipeline.
     """
     # Build a kid-friendly prompt from the caption
     prompt = (
@@ -59,13 +59,8 @@ def generate_story(caption):
         "This is a fun and magical story for little kids: "
     )
 
-    story_generator = pipeline(
-        "text-generation",
-        model="Prashant-karwasra/GPT2_text_generation_model"
-    )
-
-    # Generate text with controlled length for 50-100 words
-    result = story_generator(
+    # Generate text with controlled length for 50-100 words using the cached pipeline
+    result = story_pipeline(
         prompt,
         max_length=120,
         num_return_sequences=1,
@@ -93,11 +88,6 @@ def generate_story(caption):
 def text_to_audio(story_text):
     """
     Convert a story string into an audio file using Google Text-to-Speech.
-    
-    Parameters:
-        story_text (str): The story text to convert to speech.
-    Returns:
-        str: File path of the generated audio (.mp3) file.
     """
     tts = gTTS(text=story_text, lang="en", slow=False)
     # Save to a temporary file so Streamlit can play it
@@ -187,7 +177,7 @@ st.markdown("""
 
 # ── Main Part ───────────────────────────────────────────────────────────────
 
-# --- NEW: Initialize Session States for Reset Functionality ---
+# --- Initialize Session States for Reset Functionality ---
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 if 'story_finished' not in st.session_state:
@@ -203,7 +193,7 @@ st.markdown(
 # Image upload section
 st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
 
-# --- MODIFIED: Added dynamic key to file_uploader to allow clearing ---
+# Added dynamic key to file_uploader to allow clearing
 uploaded_file = st.file_uploader(
     "Choose a fun image...",
     type=["jpg", "jpeg", "png"],
@@ -262,18 +252,23 @@ if uploaded_file is not None:
     st.balloons()
     st.success("🎉 Your story is ready! Press play to listen! 🎧")
     
-    # --- NEW: Flag that the story is done ---
+    # Flag that the story is done
     st.session_state.story_finished = True
 
-    # --- NEW: Create Another Story Flow ---
+    # --- Create Another Story Flow ---
     if st.session_state.story_finished:
         st.markdown("<br>", unsafe_allow_html=True) # Adds a little spacing
         if st.button("🔄 Create Another Story!"):
-            # Change the uploader key to force Streamlit to clear the file
+            # Delete the file from Streamlit's internal cache immediately
+            widget_key = f"uploader_{st.session_state.uploader_key}"
+            if widget_key in st.session_state:
+                del st.session_state[widget_key]
+
+            # Change the uploader key to force Streamlit to clear the file UI
             st.session_state.uploader_key += 1
             # Reset the finished flag
             st.session_state.story_finished = False
-            # Rerun the app from the top
+            # Rerun the app instantly
             st.rerun()
 
 # Footer
