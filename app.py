@@ -51,7 +51,13 @@ def text2story(scenario):
     Returns:
         str: A fun story between 50-100 words for children aged 3-10.
     """
-    prompt = f"Once upon a time, {scenario}. "
+    # Build a longer prompt to give the model more context to continue from
+    prompt = (
+        f"Once upon a time, {scenario}. "
+        f"It was a beautiful sunny day. "
+        f"Everyone was happy and excited. "
+        f"The adventure was about to begin. "
+    )
 
     story_pipe = pipeline(
         "text-generation",
@@ -60,17 +66,15 @@ def text2story(scenario):
 
     raw_story = ""
 
-    # Try up to 3 times to guarantee at least 50 words
-    for attempt in range(3):
+    # Try up to 5 times to guarantee at least 50 words
+    for attempt in range(5):
         story_results = story_pipe(
             prompt,
-            min_new_tokens=70,
-            max_new_tokens=150,
+            max_new_tokens=200,
             num_return_sequences=1,
             do_sample=True,
             temperature=0.85 + (attempt * 0.1),
-            repetition_penalty=1.2,
-            truncation=True
+            repetition_penalty=1.2
         )
 
         raw_story = story_results[0]["generated_text"]
@@ -78,6 +82,15 @@ def text2story(scenario):
         word_count = len(raw_story.split())
         if word_count >= 50:
             break
+
+    # If still under 50 words after retries, pad with a closing sentence
+    if len(raw_story.split()) < 50:
+        raw_story += (
+            " They laughed and played together all day long. "
+            "When the sun began to set, they knew it was time to go home. "
+            "But they promised to meet again tomorrow for another adventure. "
+            "And they all lived happily ever after. The end."
+        )
 
     # Trim to stay within 100 words maximum
     words = raw_story.split()
