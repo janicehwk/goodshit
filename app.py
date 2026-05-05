@@ -192,10 +192,7 @@ if 'story_finished' not in st.session_state:
 
 # App header using standard st.title
 st.title("🪄 Magic Story Machine 🪄")
-st.markdown(
-    '<p class="kid-subtitle">Upload a picture and watch it turn into a story! 📖✨</p>',
-    unsafe_allow_html=True,
-)
+st.subtitle("Upload a picture and watch it turn into a story! 📖✨")
 
 # Image upload section
 st.markdown('<p class="step-label">📸 Step 1: Pick a Picture!</p>', unsafe_allow_html=True)
