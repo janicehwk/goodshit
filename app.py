@@ -53,36 +53,48 @@ def generate_story(caption):
     Generate a kid-friendly story (50-100 words) from an image caption.
     Uses the globally cached GPT2 text generation pipeline.
     """
-    # Build a kid-friendly prompt from the caption
+    # Build a kid-friendly prompt from the caption that encourages a story
     prompt = (
         f"Once upon a time, {caption}. "
-        "This is a fun and magical story for little kids: "
+        "This was the beginning of an incredible and unexpected adventure. "
+        "Suddenly, "
     )
 
-    # Generate text with controlled length for 50-100 words using the cached pipeline
+    # Generate text enforcing a longer length, preventing repetitive sentences
     result = story_pipeline(
         prompt,
-        max_length=120,
+        min_length=80,          # Forces the model to generate at least ~60 words
+        max_length=160,         # Gives room to finish thoughts
         num_return_sequences=1,
         do_sample=True,
-        temperature=0.8
+        temperature=0.85,
+        repetition_penalty=1.2, # Stops GPT2 from repeating itself
+        truncation=True
     )
-    story = result[0]["generated_text"]
+    
+    raw_story = result[0]["generated_text"]
 
-    # Trim story to roughly 50-100 words
-    words = story.split()
+    # Trim story to exactly 50-100 words cleanly
+    words = raw_story.split()
     if len(words) > 100:
-        # Cut at the last full sentence within 100 words
-        trimmed = " ".join(words[:100])
-        # Try to end at a sentence boundary
-        for punctuation in [".", "!", "?"]:
-            last_pos = trimmed.rfind(punctuation)
-            if last_pos != -1:
-                trimmed = trimmed[: last_pos + 1]
-                break
-        story = trimmed
+        words = words[:100]
+        trimmed_story = " ".join(words)
+        
+        # Try to end at a natural sentence boundary (. ! ?)
+        last_punctuation = max(
+            trimmed_story.rfind('.'), 
+            trimmed_story.rfind('!'), 
+            trimmed_story.rfind('?')
+        )
+        
+        if last_punctuation != -1:
+            trimmed_story = trimmed_story[:last_punctuation+1]
+        else:
+            trimmed_story += "..." # Fallback
+            
+        return trimmed_story
 
-    return story
+    return raw_story
 
 
 def text_to_audio(story_text):
