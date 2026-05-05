@@ -4,71 +4,41 @@ from PIL import Image
 from gtts import gTTS
 import os
 
-# ==========================================
-# MODEL INITIALIZATION (Cached for performance)
-# ==========================================
+# --- Model Loading (Backend Setup) ---
 @st.cache_resource
 def load_resource_models():
-    """
-    Loads the Hugging Face models into memory. 
-    Cached to prevent reloading on every button click.
-    """
-    # Using 'image-to-text' as it is the official task name in modern transformers
-    cap_mod = pipeline(
-        "image-to-text", 
-        model="Salesforce/blip-image-captioning-base"
-    )
-    
-    # Using GPT-2 for text generation
-    story_mod = pipeline(
-        "text-generation", 
-        model="gpt2"
-    )
+    # Model for Function 1: Image Captioning (Fixed to "image-to-text")
+    cap_mod = pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
+    # Model for Function 2: Story Generation (using GPT-2)
+    story_mod = pipeline("text-generation", model="gpt2")
     return cap_mod, story_mod
 
-# Load models at startup
 caption_model, story_model = load_resource_models()
 
 # ==========================================
 # FUNCTION 1: Image Processing & Captioning
 # ==========================================
 def generate_caption(image_input):
-    """
-    Takes a PIL Image and returns a descriptive string using BLIP.
-    """
+    """Uses BLIP to generate a descriptive caption."""
     results = caption_model(image_input)
-    # Extract the generated text from the pipeline output
     return results[0]['generated_text']
 
 # ==========================================
 # FUNCTION 2: Story Generation
 # ==========================================
 def generate_story(caption):
-    """
-    Takes a caption and expands it into a kid-friendly story (approx. 50-100 words).
-    """
-    # Kid-friendly prompt structure
-    prompt = f"Once upon a time, in a magical land, there was {caption}. Suddenly, "
-    
-    # Generate story with parameters tuned for creativity but keeping it concise
-    story_output = story_model(
-        prompt, 
-        max_length=100,      # Keeps it within the 50-100 word requirement
-        do_sample=True,      # Enables creative generation
-        temperature=0.8,     # Adds a bit of randomness
-        truncation=True      # Ensures it doesn't exceed max length gracefully
-    )
+    """Uses GPT-2 to expand the caption into a narrative."""
+    prompt = f"Once upon a time, there was {caption}. It was a strange day because"
+    story_output = story_model(prompt, max_length=150, do_sample=True, temperature=0.8, truncation=True)
     return story_output[0]['generated_text']
 
 # ==========================================
 # FUNCTION 3: Text-to-Speech Conversion
 # ==========================================
 def text_to_speech(text):
-    """
-    Converts text to an MP3 audio file using Google TTS (gTTS).
-    """
-    tts = gTTS(text=text, lang='en', slow=False)
-    file_path = "magical_story_audio.mp3"
+    """Converts the story text into an MP3 file using gTTS."""
+    tts = gTTS(text=text, lang='en')
+    file_path = "story_audio.mp3"
     tts.save(file_path)
     return file_path
 
@@ -76,50 +46,61 @@ def text_to_speech(text):
 # MAIN APP: UI and Execution Flow
 # ==========================================
 def main():
-    # Page setup
-    st.set_page_config(page_title="Magical Storyteller", page_icon="🪄", layout="centered")
-    
-    st.title("🪄 Magical AI Storyteller")
-    st.write("Upload a picture and let the AI write and read a magical story for you!")
+    st.set_page_config(page_title="Multimodal AI Storyteller", page_icon="📖")
+    st.title("Deep Learning Business App")
+    st.write("Complete the pipeline: Image → Caption → Story → Speech")
 
-    # State management for the reset button
-    if 'story_generated' not in st.session_state:
-        st.session_state.story_generated = False
+    # --- Initialize Session States ---
+    if 'processed' not in st.session_state:
+        st.session_state.processed = False
+        
+    # We use this key to force the file uploader to clear itself
+    if 'uploader_key' not in st.session_state:
+        st.session_state.uploader_key = 0
 
-    # Image Uploader
-    uploaded_file = st.file_uploader("Upload an Image (JPG/PNG)", type=["jpg", "jpeg", "png"])
+    # UI: Image Upload (Note the dynamic key parameter)
+    uploaded_file = st.file_uploader(
+        "Step 1: Upload an Image", 
+        type=["jpg", "jpeg", "png"],
+        key=f"uploader_{st.session_state.uploader_key}"
+    )
 
     if uploaded_file is not None:
-        # Display the uploaded image
         image = Image.open(uploaded_file)
-        st.image(image, caption="Your magical picture!", use_container_width=True)
+        st.image(image, caption="Your Image", use_container_width=True)
 
-        # Trigger button
-        if st.button("✨ Create My Story ✨"):
-            st.session_state.story_generated = True
+        # BUTTON: Run the Pipeline
+        if st.button("Generate Story & Audio"):
+            st.session_state.processed = True
             
-            with st.spinner("The AI is thinking of a magical tale..."):
-                
-                # --- Step 1: Caption ---
+            with st.spinner("Executing AI Models..."):
+                # 1. Image -> Caption
                 caption = generate_caption(image)
-                st.info(f"**What the AI sees:** {caption}")
+                st.subheader("Output 1: Image Caption")
+                st.info(caption)
 
-                # --- Step 2: Story ---
+                # 2. Caption -> Story
                 story = generate_story(caption)
-                st.subheader("📖 Your Story:")
+                st.subheader("Output 2: Generated Story")
                 st.write(story)
 
-                # --- Step 3: Audio ---
+                # 3. Story -> Audio
                 audio_path = text_to_speech(story)
-                st.subheader("🎧 Listen to the Story:")
+                st.subheader("Output 3: Audio Narration")
                 st.audio(audio_path, format="audio/mp3")
 
-        # Reset flow (appears only after a story is made)
-        if st.session_state.story_generated:
+        # --- LAST FLOW: RESET BUTTON ---
+        if st.session_state.processed:
             st.divider()
-            if st.button("🔄 Create Another Story"):
-                st.session_state.story_generated = False
-                st.rerun()
+            if st.button("🔄 Reset and Create More Stories"):
+                # Clear the processed state
+                st.session_state.processed = False
+                
+                # Increment the uploader key to destroy the old uploader and render an empty one
+                st.session_state.uploader_key += 1
+                
+                # Rerun the app from the top
+                st.rerun() 
 
 if __name__ == "__main__":
     main()
